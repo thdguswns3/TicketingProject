@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Ticket-Network Seoul
+
+Mappings:
+  RegionMap: 
+    ap-northeast-2:
+      Linux2: ami-0094965d55b3bb1ff
+
+Parameters:
+  KeyName:
+    Description: Name of KeyPair
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+
+  SGforBastionHost1:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow SSH
+      GroupName: Ticket-Bastion-SG-a
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Fn::ImportValue: SeoulVPCID
+
+  EC2forBastion1:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - Linux2
+      KeyName: !Ref KeyName
+      AvailabilityZone:
+        Fn::ImportValue: SeoulPubAZ1
+      InstanceType: t2.micro
+      SubnetId:
+        Fn::ImportValue: SeoulPubSub1ID
+      SecurityGroupIds:
+        - !Ref SGforBastionHost1
+      Tags:
+        - Key: Name
+          Value: Ticket-BastionHost-a
+
+  SGforBastionHost2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow SSH
+      GroupName: Ticket-Bastion-SG-b
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Fn::ImportValue: SeoulVPCID
+
+  EC2forBastion2:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - Linux2
+      KeyName: !Ref KeyName
+      AvailabilityZone:
+        Fn::ImportValue: SeoulPubAZ2
+      InstanceType: t2.micro
+      SubnetId:
+        Fn::ImportValue: SeoulPubSub2ID
+      SecurityGroupIds:
+        - !Ref SGforBastionHost2
+      Tags:
+        - Key: Name
+          Value: Ticket-BastionHost-b

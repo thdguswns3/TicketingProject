@@ -1,0 +1,40 @@
+# ACM은 버지니아 북부(us-east-1)에서 Cloudformation 진행해야 CloudFront가 인증서를 사용할 수 있음
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create HostedZone and Certificate & Validation
+Resources:
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      HostedZoneConfig: 
+        Comment: ticketing.pw
+      HostedZoneTags: 
+        - Key: Name
+          Value: ticketing.pw
+      Name: ticketing.pw 
+    #  QueryLoggingConfig:  # CloudWatch 사용시 필요할수도 있음
+
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties: 
+      DomainName: '*.ticketing.pw'
+      CertificateTransparencyLoggingPreference: DISABLED
+      ValidationMethod: DNS
+      DomainValidationOptions: # DNS 자동 인증 >>> 이게 잘 작동 안해서 이 부분은 수동으로 해줘야 함, 원인을 모르겠음
+        - DomainName: '*.ticketing.pw'
+          HostedZoneId: !GetAtt HostedZone.Id
+      Tags:
+        - Key: Name
+          Value: Ticket-Certificate
+
+Outputs:
+  HostedZoneID:
+    Description: outHostedZoneID
+    Value: !GetAtt HostedZone.Id
+    Export:
+      Name: "HostedZoneID"
+
+  CertificateID:
+    Description: outCertificateID
+    Value: !Ref Certificate
+    Export:
+      Name: "CertificateID"

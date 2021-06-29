@@ -1,0 +1,278 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Ticket-Network-Virginia
+
+Parameters:
+
+  AZpublic1:
+    Description: AvailabilityZone for public
+    Type: AWS::EC2::AvailabilityZone::Name
+  AZpublic2:
+    Description: AvailabilityZone for public
+    Type: AWS::EC2::AvailabilityZone::Name
+  AZprivate1:
+    Description: AvailabilityZone for private
+    Type: AWS::EC2::AvailabilityZone::Name
+  AZprivate2:
+    Description: AvailabilityZone for private
+    Type: AWS::EC2::AvailabilityZone::Name
+
+  VPCCidr:
+    Description: Cidr Block for VPC
+    Type: String
+    Default: 10.1.0.0/16
+  PublicSubnet1Cidr:
+    Description: Cidr Block for Public Subnet 1
+    Type: String
+    Default: 10.1.0.0/24
+  PublicSubnet2Cidr:
+    Description: Cidr Block for Public Subnet 2
+    Type: String
+    Default: 10.1.1.0/24
+  PrivateSubnet1Cidr:
+    Description: Cidr Block for Private Subnet 1
+    Type: String
+    Default: 10.1.2.0/23
+  PrivateSubnet2Cidr:
+    Description: Cidr Block for Private Subnet 2
+    Type: String
+    Default: 10.1.4.0/23
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidr
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Ticket-VPC-Virginia
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Ref AZpublic1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Ticket-Public-Virginia-a
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: !Ref AZpublic2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Ticket-Public-Virginia-c
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      AvailabilityZone: !Ref AZprivate1
+      Tags:
+        - Key: Name
+          Value: Ticket-Private-Virginia-a
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      AvailabilityZone: !Ref AZprivate2
+      Tags:
+        - Key: Name
+          Value: Ticket-Private-Virginia-c
+
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Ticket-IGW-Virginia
+  Attachigw:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref IGW
+      VpcId: !Ref VPC
+
+  PublicRT1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Ticket-PublicRT1-a
+
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    DependsOn: Attachigw
+    Properties:
+      RouteTableId: !Ref PublicRT1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  PublicSubnetRTAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRT1
+      SubnetId: !Ref PublicSubnet1
+
+  PublicRT2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Ticket-PublicRT2-c
+
+  PublicRoute2:
+    Type: AWS::EC2::Route
+    DependsOn: Attachigw
+    Properties:
+      RouteTableId: !Ref PublicRT2
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+
+  PublicSubnetRTAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRT2
+      SubnetId: !Ref PublicSubnet2
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: Ticket-EIP1
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: Ticket-NAT1
+
+  PrivateRT1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Ticket-PrivateRT1-a
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRT1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnetRTAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRT1
+      SubnetId: !Ref PrivateSubnet1
+
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: Ticket-EIP2
+
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: Ticket-NAT2
+
+  PrivateRT2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Ticket-PrivateRT2-c
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRT2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+
+  PrivateSubnetRTAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRT2
+      SubnetId: !Ref PrivateSubnet2
+
+Outputs:
+  VPC:
+    Description: outVPC
+    Value: !Ref VPC
+    Export:
+      Name: "VirginiaVPCID"
+
+  PublicSubnet1:
+    Description: OutPublicSubnet-a
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: "VirginiaPubSub1ID"
+
+  PublicSubnet2:
+    Description: OutPublicSubnet-c
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: "VirginiaPubSub2ID"
+
+  PrivateSubnet1:
+    Description: OutPrivateSubnet-a
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: "VirginiaPriSub1ID"
+
+  PrivateSubnet2:
+    Description: OutPrivateSubnet-c
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: "VirginiaPriSub2ID"
+
+  Public1AZ:
+    Description: OutPublicAZ-a
+    Value: !GetAtt PublicSubnet1.AvailabilityZone
+    Export:
+      Name: "VirginiaPubAZ1"
+
+  Public2AZ:
+    Description: OutPublicAZ-c
+    Value: !GetAtt PublicSubnet2.AvailabilityZone
+    Export:
+      Name: "VirginiaPubAZ2"
+
+  Private1AZ:
+    Description: OutPrivateAZ-a
+    Value: !GetAtt PrivateSubnet1.AvailabilityZone
+    Export:
+      Name: "VirginiaPriAZ1"
+
+  Private2AZ:
+    Description: OutPrivateAZ-c
+    Value: !GetAtt PrivateSubnet2.AvailabilityZone
+    Export:
+      Name: "VirginiaPriAZ2"

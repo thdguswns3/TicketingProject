@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Ticket-Network Virginia
+
+Mappings:
+  RegionMap: 
+    us-east-1:
+      Linux2: ami-0d5eff06f840b45e9
+Parameters:
+  KeyName:
+    Description: Name of KeyPair
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+
+  SGforBastionHost1:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow SSH
+      GroupName: Ticket-Bastion-SG-a
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Fn::ImportValue: VirginiaVPCID
+
+  EC2forBastion1:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - Linux2
+      KeyName: !Ref KeyName
+      AvailabilityZone:
+        Fn::ImportValue: VirginiaPubAZ1
+      InstanceType: t2.micro
+      SubnetId:
+        Fn::ImportValue: VirginiaPubSub1ID
+      SecurityGroupIds:
+        - !Ref SGforBastionHost1
+      Tags:
+        - Key: Name
+          Value: Ticket-BastionHost-a
+
+  SGforBastionHost2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow SSH
+      GroupName: Ticket-Bastion-SG-b
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Fn::ImportValue: VirginiaVPCID
+
+  EC2forBastion2:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - Linux2
+      KeyName: !Ref KeyName
+      AvailabilityZone:
+        Fn::ImportValue: VirginiaPubAZ2
+      InstanceType: t2.micro
+      SubnetId:
+        Fn::ImportValue: VirginiaPubSub2ID
+      SecurityGroupIds:
+        - !Ref SGforBastionHost2
+      Tags:
+        - Key: Name
+          Value: Ticket-BastionHost-b

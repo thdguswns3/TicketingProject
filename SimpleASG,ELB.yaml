@@ -1,0 +1,245 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ELB + ASG(WEB)
+
+Resources:
+#ASG + Cloud Watch Alarm
+  WEBLaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: ami-02d044313188c9521
+      InstanceType: t2.micro
+      LaunchConfigurationName: WEBLaunchConfig
+      InstanceMonitoring: false
+      SecurityGroups:
+        - !Ref TicketASGSG
+      KeyName: Seoul # 지정한 키 이름으로 명시해야함(Key ID 아님)
+
+  WEBAutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      AutoScalingGroupName: Ticket-ASG
+      VPCZoneIdentifier:
+        - Fn::ImportValue: SeoulPriSub1ID
+        - Fn::ImportValue: SeoulPriSub2ID
+      Cooldown: '300' # 스케일링 작업이 완료된 후 다른 스케일링 작업을 시작할 수 있는 시간(초)
+      HealthCheckType: 'EC2' # health check을 하는 대상 지정 (ELB: EC2 안에 동작하는 어플리케이션이 정상인지 체크, EC2: EC2 자체가 정상 동작중인지 체크)
+      HealthCheckGracePeriod: '300' #EC2가 시작되고 Health check을 몇초 후 진행할 것인지(CLI,CFT에서 기본값 0, 콘솔 기본값 300)
+      LaunchConfigurationName: !Ref WEBLaunchConfig #시작 구성 이름
+      # LifecycleHookSpecificationList: # Amazon EC2 자동 스케일링이 인스턴스를 시작하거나 종료할 때 수행할 작업을 지정
+      MaxSize: '4' # 최대 인스턴스 개수
+      MinSize: '2' # 최소 인스턴스 개수
+      TargetGroupARNs: 
+        - !Ref TargetGroup # 타겟 그룹 ARN, 즉 ASG의 EC2가 타겟 그룹에 속하게 되고 ELB가 타겟 그룹한테 트래픽을 분산하여 보내줌
+      # NewInstancesProtectedFromScaleIn: # scale in 될 때 Amazon EC2 자동 스케일링에 의해 종료로부터 보호되는지 여부
+      # NotificationConfigurations: # 지정된 이벤트가 발생할 때 알림을 보내도록 자동 스케일링 그룹을 구성
+      TerminationPolicies: #종료 정책 지정(여러개 우선순위로 설정 가능)(OldestInstance, OldestLaunchConfiguration, NewestInstance, ClosestToNextInstanceHour, Default, OldestLaunchTemplate, AllocationStrategy)
+        - NewestInstance 
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: true # Auto Scaling에 의해 생성 되는 EC2가 동일한 태그를 가지게 할 것인지(필수 설정)
+          Value: Ticket-ASG-WEB
+
+  ScaleOutPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WEBAutoScalingGroup
+      AdjustmentType: "ChangeInCapacity"
+      PolicyType: "SimpleScaling"
+      Cooldown: "300"
+      ScalingAdjustment: 1
+
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: ForScaleOut
+      AlarmName: Ticket-CloudWatch-ScaleOut
+      ComparisonOperator: GreaterThanThreshold # 값이 더 클때로 지정(GreaterThanThreshold, GreaterThanOrEqualToThreshold, LessThanThreshold, or LessThanOrEqualToThreshold 중 가능)
+      Statistic: Average
+      Threshold: '85'
+      AlarmDescription: Alarm if CPU too high
+      Period: '60'
+      AlarmActions:
+      - !Ref ScaleOutPolicy
+      Namespace: AWS/EC2
+      Statistic: Average # 평균으로 데이터를 낸다.
+      Dimensions: 
+      - Name: AutoScalingGroupName # 진짜 이름 적는거 아니고 지표 찾을 때 EC2 - AutoScalingGroup 탭으로 들어가서 선택하도록 하기 위한 설정이다.
+        Value: 
+          Ref: WEBAutoScalingGroup
+      MetricName: CPUUtilization
+      EvaluationPeriods: '1' # 뭔지 이해가 잘 안됨..
+
+  ScaleInPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref WEBAutoScalingGroup
+      AdjustmentType: "ChangeInCapacity"
+      PolicyType: "SimpleScaling"
+      Cooldown: "300"
+      ScalingAdjustment: -1
+
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: ForScaleIn
+      AlarmName: Ticket-CloudWatch-ScaleIn
+      ComparisonOperator: LessThanThreshold # 값이 더 클때로 지정(GreaterThanThreshold, GreaterThanOrEqualToThreshold, LessThanThreshold, or LessThanOrEqualToThreshold 중 가능)
+      Statistic: Average
+      Threshold: '15'
+      AlarmDescription: Alarm if CPU too Low
+      Period: '60'
+      AlarmActions:
+      - !Ref ScaleInPolicy
+      Namespace: AWS/EC2
+      Statistic: Average # 평균으로 데이터를 낸다.
+      Dimensions: 
+      - Name: AutoScalingGroupName
+        Value: 
+          Ref: WEBAutoScalingGroup
+      MetricName: CPUUtilization
+      EvaluationPeriods: '1' # 뭔지 이해가 잘 안됨..
+
+  ASGScheduledActionIN: # 쇼핑몰에 사용자가 집중되는 날을 위한 정책의 시작 시간 지정하는 CFT
+    Type: AWS::AutoScaling::ScheduledAction
+    Properties: 
+      AutoScalingGroupName: !Ref WEBAutoScalingGroup
+      StartTime: "2021-06-09T00:00:00Z" # 한국시간 = UTC + 9 (일단 9시로 설정해둠)
+      EndTime: "2021-06-09T01:00:00Z" # 한국시간 = UTC + 9 (일단 10시로 설정해둠)
+      DesiredCapacity: 30 #(DesiredCapacity, Maxsize, Minsize 중 하나 반드시 지정해야 한다.)
+      MaxSize: 100
+      #Recurrence: "0 19 * * *"   #crontab의 일종으로 특정 요일이나 날짜에 반복적으로 실행
+
+  TicketASGSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Web Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 10.0.0.0/16
+          FromPort: 22
+          ToPort: 22
+        - IpProtocol: tcp
+          SourceSecurityGroupId: !Ref ELBSecurityGroup
+          FromPort: 80
+          ToPort: 80
+      Tags: 
+        - Key: Name
+          Value: Ticket-ASG-SG
+      VpcId:
+        Fn::ImportValue: SeoulVPCID
+
+
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Ticket-ELB-SG
+      GroupName: Ticket-ELB-SG
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: Ticket-ELB-SG
+      VpcId:
+        Fn::ImportValue: SeoulVPCID
+  
+  LoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      IpAddressType: ipv4
+      #LoadBalancerAttributes:
+       # - Key: deletion_protection.enabled # 삭제 보호가 활성화되었는지 여부를 나타냅니다. (true, false)
+       #   Value: true
+       # - Key: access_logs.s3.enabled # 엑세스 로그 저장할 것인지 (true, false)
+       #   Value: true
+       # - Key: access_logs.s3.bucket #로그 저장할 s3 지정 옵션
+       #   Value: #s3 버킷 이름 지정
+      Name: Ticket-Seoul-ELB
+      Scheme: internet-facing
+      Subnets:
+        - Fn::ImportValue: SeoulPubSub1ID # AutoScaling의 시작그룹에 의해 EC2가 Private Subnet에 생성되더라도 ELB는 반드시 Public Subnet에 연결해야함
+        - Fn::ImportValue: SeoulPubSub2ID
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: Ticket-ELB
+      Type: application # application, gateway, network 중 지정
+  
+  TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: Ticket-Seoul-TargetGroup
+      Port: 80
+      Protocol: HTTP
+      VpcId: 
+        Fn::ImportValue: SeoulVPCID
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: Ticket-TargetGroup
+      UnhealthyThresholdCount: 2 #대상이 건강하지 않다고 간주하기 전에 필요한 연속 상태 검사 실패 횟수입니다. 대상 그룹 프로토콜이 HTTP 또는 HTTPS인 경우 기본값은 2입니다
+  
+  ListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward   # 종류: authenticate-cognito | authenticate-oidc | fixed-response | forward | redirect
+          TargetGroupArn: !Ref TargetGroup
+      Conditions:
+        - Field: http-header # 종류: http-header | http-request-method | host-header | path-pattern | query-string | source-ip
+          HttpHeaderConfig:
+            HttpHeaderName: Ticket
+            Values:
+              - Ticket
+      ListenerArn: !Ref Listener
+      Priority: 1
+
+  Listener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward # Listener Rule에서 상세하게 정의
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: '80' # 로드 벨런서가 수신하는 포트
+      Protocol: HTTP # 클라이언트에서 로드 밸런서로 연결하는 프로토콜입니다.
+      
+# 만약 cloudwatch를 하게된다면 여기도 설정해야 할 거 같다.
+  #LoadBalancerAlarm:
+   # Type: 'AWS::CloudWatch::Alarm'
+    #Properties:
+     # Namespace: AWS/ApplicationELB
+     # Dimensions:
+      #  - Name: LoadBalancer
+       #   Value: !GetAtt 
+        #    - LoadBalancer
+         #   - LoadBalancerFullName
+        #- Name: TargetGroup
+         # Value: !GetAtt 
+          #  - TargetGroup1
+           # - TargetGroupFullName
+      #MetricName: UnHealthyHostCount
+      #Period: 60
+      #Statistic: Average
+      #ComparisonOperator: GreaterThanThreshold
+      #Threshold: 0
+      #valuationPeriods: 1
+Outputs:
+  ExLoadBalancer:
+    Description: outLoadBalancer
+    Value: !Ref LoadBalancer
+    Export:
+      Name: "SeoulELBID"
+  LoadBalancerDNSName:
+    Description: outLoadBalancerDNSName
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: "SeoulELBDNSName"
+  ELBSecurityGroup:
+    Description: outELBSecurityGroup
+    Value: !Ref ELBSecurityGroup
+    Export:
+      Name: "SeoulELBSG"
